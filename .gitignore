@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+.env
+*.log
+test-results/
+playwright-report/
+.DS_Store
+# Kullanıcıya ait kaynak doküman; gerçek şirket tutarları içerir.
+docs/GEREKSINIMLER.md
