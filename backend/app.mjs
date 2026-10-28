@@ -156,7 +156,7 @@ export async function createApp(
   });
   app.get("/api/state", (req, res) => {
     const year = integer(
-      req.query.year || new Date().getFullYear(),
+      req.query.year || 2027,
       "year",
       2000,
       2100,

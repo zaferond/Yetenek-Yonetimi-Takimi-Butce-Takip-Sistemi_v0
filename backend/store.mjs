@@ -823,7 +823,7 @@ export class Store {
     return this.exists("savings_items", id);
   }
   snapshot(year, versionId) {
-    const years = this.all("SELECT * FROM budget_years ORDER BY year DESC"),
+    const years = this.all("SELECT * FROM budget_years WHERE year>=2027 ORDER BY year DESC"),
       categories = this.all(
         "SELECT * FROM budget_categories ORDER BY sort_order,id",
       );

@@ -41,7 +41,7 @@ export function Workspace({
   onLogout: () => void;
 }) {
   const [data, setData] = useState<Snapshot | null>(null),
-    [year, setYear] = useState(2026),
+    [year, setYear] = useState(2027),
     [version, setVersion] = useState<number | undefined>(),
     [tab, setTab] = useState<Section>("home"),
     [loading, setLoading] = useState(true),
