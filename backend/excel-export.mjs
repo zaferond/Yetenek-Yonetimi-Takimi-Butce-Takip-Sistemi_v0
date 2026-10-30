@@ -30,6 +30,20 @@ export function amountCell(units) {
     : decimal(units);
 }
 
+// TL amount for a numeric cell: rounded half-up (away from zero) to 2 decimals in
+// BigInt, same rule as domain.mjs money(). Only the final rounded value becomes a
+// Number; if it does not fit Excel's 15 significant digits the exact value is text.
+export function moneyCell(units) {
+  const value = BigInt(units),
+    negative = value < 0n,
+    absolute = negative ? -value : value,
+    cents = (absolute + 5000n) / 10000n;
+  if (cents === 0n) return 0;
+  if (cents.toString().replace(/0+$/, "").length > 15) return decimal(units);
+  const text = `${cents / 100n}.${String(cents % 100n).padStart(2, "0")}`;
+  return Number(negative ? `-${text}` : text);
+}
+
 export function styleHeader(row) {
   row.font = { bold: true, color: { argb: "FFFFFFFF" } };
   row.fill = headerFill;

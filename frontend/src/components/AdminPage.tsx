@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Empty } from "../ui";
 import type { User } from "../types";
+const PAGE_SIZE = 200;
 const roles = {
   admin: "Yönetici",
   editor: "Düzenleyici",
@@ -12,7 +13,10 @@ export function AdminPage({ currentUser }: { currentUser: User }) {
     [logs, setLogs] = useState<any[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [loading, setLoading] = useState(true);
+    [loading, setLoading] = useState(true),
+    [hasMore, setHasMore] = useState(false),
+    [loadingMore, setLoadingMore] = useState(false),
+    [showSessions, setShowSessions] = useState(true);
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState(""),
     [role, setRole] = useState<User["role"]>("viewer");
@@ -21,16 +25,37 @@ export function AdminPage({ currentUser }: { currentUser: User }) {
     try {
       const [u, l] = await Promise.all([
         api<User[]>("/admin/users"),
-        api<any[]>("/audit"),
+        api<any[]>(`/audit?limit=${PAGE_SIZE}`),
       ]);
       setUsers(u);
       setLogs(l);
+      setHasMore(l.length === PAGE_SIZE);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
     }
   }
+  async function loadMore() {
+    const last = logs[logs.length - 1];
+    if (!last) return;
+    setError("");
+    setLoadingMore(true);
+    try {
+      const more = await api<any[]>(
+        `/audit?limit=${PAGE_SIZE}&before=${encodeURIComponent(String(last.id))}`,
+      );
+      setLogs((prev) => [...prev, ...more]);
+      setHasMore(more.length === PAGE_SIZE);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+  const visibleLogs = showSessions
+    ? logs
+    : logs.filter((a) => a.entity !== "sessions");
   useEffect(() => {
     void load();
   }, []);
@@ -172,10 +197,23 @@ export function AdminPage({ currentUser }: { currentUser: User }) {
       <section className="panel">
         <div className="panel-toolbar">
           <h2>İşlem geçmişi ve log kayıtları</h2>
-          <span>Son 200 kayıt</span>
+          <label>
+            <input
+              type="checkbox"
+              checked={showSessions}
+              onChange={(e) => setShowSessions(e.target.checked)}
+            />{" "}
+            Oturum kayıtlarını göster (giriş/çıkış)
+          </label>
+          <span>
+            {visibleLogs.length} kayıt gösteriliyor
+            {visibleLogs.length !== logs.length
+              ? ` (yüklenen ${logs.length})`
+              : ""}
+          </span>
         </div>
         <div className="admin-logs">
-          {logs.map((a) => (
+          {visibleLogs.map((a) => (
             <article className="audit-row" key={a.id}>
               <div>
                 <strong>{a.action}</strong>
@@ -200,8 +238,25 @@ export function AdminPage({ currentUser }: { currentUser: User }) {
               </details>
             </article>
           ))}
-          {!loading && !logs.length && <Empty>Henüz işlem kaydı yok.</Empty>}
+          {!loading && !visibleLogs.length && (
+            <Empty>
+              {logs.length
+                ? "Yüklenen kayıtlar arasında oturum dışı işlem yok."
+                : "Henüz işlem kaydı yok."}
+            </Empty>
+          )}
         </div>
+        {hasMore && (
+          <div className="panel-toolbar">
+            <button
+              className="button"
+              disabled={loading || loadingMore}
+              onClick={() => void loadMore()}
+            >
+              {loadingMore ? "Yükleniyor…" : "Daha fazla yükle"}
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );

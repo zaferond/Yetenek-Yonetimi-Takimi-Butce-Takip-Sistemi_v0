@@ -37,7 +37,7 @@ export function WorkspaceSidebar({
   const content = (
     <>
       <div className="sidebar-heading">
-        <span>ÇALIŞMA ALANI</span>
+        <span>Çalışma alanı</span>
         <button
           className="icon"
           aria-label="Yan menüyü kapat"

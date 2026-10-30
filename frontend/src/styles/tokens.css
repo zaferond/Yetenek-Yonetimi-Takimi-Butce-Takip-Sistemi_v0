@@ -42,6 +42,10 @@
   --brand-focus: #806093;
   --brand-focus-shadow: #80609326;
   --surface-white: #fff;
+  /* Text on the dark plum surfaces (login introduction, available budget). */
+  --on-dark: var(--surface-white);
+  --on-dark-muted: #ded3e5;
+  --on-dark-danger: #ffb4a8;
   --success: #326857;
   --success-surface: #edf4ef;
   --danger: #a23838;
@@ -51,12 +55,27 @@
   --warning-surface: #fff7e8;
   --warning-border: #e5c88c;
   --shadow-sm: 0 2px 4px #302a3908;
+  --shadow-hover: 0 6px 22px #66507814;
   --shadow-overlay: 0 24px 70px #302a3926;
   --overlay: #302a3970;
   --table-border: #e7e2e9;
   --table-header: #f1edf4;
   --table-actual: #faf9fb;
   --table-entry: #f5f1f7;
+  /* Home page card illustrations: decorative, one quiet hue per module. */
+  --art-paper: #ffffffcc;
+  --art-budget-bg: #f0ebf4;
+  --art-budget-ink: #7b658e;
+  --art-budget-soft: #d8cbe2;
+  --art-invoices-bg: #f6efe9;
+  --art-invoices-ink: #a07959;
+  --art-invoices-soft: #e5d5c5;
+  --art-payments-bg: #eaf1ee;
+  --art-payments-ink: #5e8274;
+  --art-payments-soft: #ccded6;
+  --art-savings-bg: #edf0f7;
+  --art-savings-ink: #7182a5;
+  --art-savings-soft: #d1daeb;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -73,9 +92,14 @@
   --fs-xl: 18px;
   --fs-2xl: 24px;
   --fs-3xl: 32px;
+  --fs-metric: clamp(18px, 1.5vw, 26px);
+  --fs-metric-hero: clamp(22px, 1.9vw, 30px);
+  --duration-fast: 0.15s;
   font-family: var(--font-sans);
   font-size: var(--fs-md);
   font-synthesis: none;
+  /* Equal-width digits everywhere so amounts and dates align in columns. */
+  font-variant-numeric: tabular-nums;
   color: var(--brand-text);
   background: var(--brand-background);
 }

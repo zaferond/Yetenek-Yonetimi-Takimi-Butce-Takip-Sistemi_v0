@@ -64,13 +64,13 @@ p {
   margin: 0;
 }
 h1 {
-  font-size: 27px;
-  font-weight: 650;
-  letter-spacing: -0.7px;
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  letter-spacing: -0.5px;
 }
 h2 {
-  font-size: 16px;
-  font-weight: 650;
+  font-size: var(--fs-lg);
+  font-weight: 600;
 }
 h3 {
   font-size: var(--fs-md);
@@ -94,7 +94,7 @@ fieldset {
   gap: 7px;
   border: 1px solid var(--brand-border);
   border-radius: 6px;
-  background: white;
+  background: var(--surface-white);
   color: var(--brand-primary);
   padding: 9px 13px;
   min-height: 40px;
@@ -107,7 +107,7 @@ fieldset {
 }
 .button.primary {
   background: var(--brand-primary);
-  color: white;
+  color: var(--surface-white);
   border-color: var(--brand-primary);
   box-shadow: var(--shadow-sm);
 }
@@ -308,7 +308,7 @@ fieldset {
 }
 .metric {
   padding: 18px;
-  background: white;
+  background: var(--surface-white);
   border: 1px solid var(--brand-border);
   border-radius: 8px;
   box-shadow: var(--shadow-sm);
@@ -348,7 +348,7 @@ fieldset {
   color: var(--brand-primary);
 }
 .panel {
-  background: white;
+  background: var(--surface-white);
   border: 1px solid var(--brand-border);
   border-radius: 8px;
   overflow: hidden;
@@ -394,7 +394,7 @@ fieldset {
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   table-layout: fixed;
 }
 .budget-table th,
@@ -403,7 +403,7 @@ fieldset {
   border-right: 1px solid var(--table-border);
   white-space: nowrap;
   text-align: right;
-  min-width: 115px;
+  min-width: 124px;
   padding: 10px 8px;
   font-variant-numeric: tabular-nums;
 }
@@ -416,13 +416,14 @@ fieldset {
   font-weight: 550;
   font-size: var(--fs-xs);
   height: 40px;
-  text-align: center;
+  /* Headers sit over right-aligned amounts so the eye scans one edge. */
+  text-align: right;
 }
 .budget-table .frozen {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: white;
+  background: var(--surface-white);
   min-width: 265px;
   max-width: 265px;
   width: 265px;
@@ -453,25 +454,32 @@ fieldset {
   font-weight: 400;
 }
 .budget-table input {
-  min-width: 100px;
-  width: 100px;
+  min-width: 108px;
+  width: 108px;
   max-width: none;
   height: 29px;
   min-height: 29px;
-  border-color: transparent;
-  background: var(--table-entry);
+  border-color: var(--table-border);
+  background: var(--surface-white);
   text-align: right;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   border-radius: 4px;
-  padding: 5px;
-  color: var(--brand-primary);
+  padding: 5px 6px;
+  color: var(--brand-text);
   font-variant-numeric: tabular-nums;
 }
-.budget-table input:hover {
+.budget-table input:hover:not(:disabled) {
   border-color: var(--brand-border-strong);
 }
+/* Read-only users see plain figures, not empty-looking fields. */
+.budget-table input:disabled {
+  border-color: transparent;
+  background: transparent;
+  opacity: 1;
+  cursor: default;
+}
 .budget-table .plan-row td {
-  height: 55px;
+  height: 50px;
 }
 .budget-table .actual-row td,
 .budget-table .actual-row th {
@@ -503,8 +511,8 @@ fieldset {
 .budget-table tfoot td,
 .budget-table tfoot th {
   background: var(--brand-surface);
-  font-weight: 650;
-  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-size: var(--fs-sm);
   height: 46px;
 }
 .budget-table tfoot .frozen {
@@ -606,7 +614,7 @@ fieldset {
   padding: 10px;
   min-width: auto;
   text-align: left;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   background: transparent;
   white-space: normal;
   max-width: 250px;
@@ -620,20 +628,20 @@ fieldset {
 .list-table {
   border-collapse: collapse;
   width: 100%;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   min-width: 900px;
 }
 .list-table th {
   background: var(--brand-surface);
   text-align: left;
-  padding: 13px 18px;
+  padding: 11px 16px;
   color: var(--brand-muted);
   font-size: var(--fs-xs);
   font-weight: 550;
   white-space: nowrap;
 }
 .list-table td {
-  padding: 17px 18px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--table-border);
   line-height: 1.5;
   max-width: 330px;
@@ -649,8 +657,11 @@ fieldset {
 }
 .list-table td.numeric {
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
   white-space: nowrap;
+}
+.list-table th.numeric,
+.list-table td.numeric {
+  text-align: right;
 }
 .row-actions {
   display: flex;
@@ -664,9 +675,19 @@ fieldset {
   white-space: nowrap;
   display: inline-block;
 }
-.status.active {
+/* Each state has its own tone; the word stays, so colour is never the only cue. */
+.status.active,
+.status.done {
   color: var(--success);
   background: var(--success-surface);
+}
+.status.planned {
+  color: var(--brand-hover);
+  background: var(--brand-surface);
+}
+.status.partial {
+  color: var(--warning);
+  background: var(--warning-surface);
 }
 .status.cancelled {
   color: var(--danger);
@@ -677,7 +698,7 @@ fieldset {
 }
 .link-row td {
   font-size: var(--fs-xs);
-  padding: 8px 18px;
+  padding: 8px 16px;
   color: var(--brand-muted);
 }
 .link-row svg {
@@ -827,7 +848,7 @@ fieldset {
   max-height: calc(100dvh - 50px);
   border: 1px solid var(--brand-border);
   border-radius: 10px;
-  background: white;
+  background: var(--surface-white);
   padding: 0;
   color: var(--brand-text);
   box-shadow: var(--shadow-overlay);
@@ -850,16 +871,7 @@ fieldset {
   background: var(--brand-surface);
   border-bottom: 1px solid var(--brand-border);
 }
-.eyebrow {
-  font-size: var(--fs-xs);
-  letter-spacing: 1.5px;
-  color: var(--brand-muted);
-  display: block;
-  margin-bottom: 6px;
-}
-.modal h2 {
-  font-size: 20px;
-}
+
 .dialog-body {
   padding: 22px 24px;
 }
@@ -1150,8 +1162,13 @@ fieldset {
   .spin {
     animation: none;
   }
-  * {
+  *,
+  *::before,
+  *::after {
     scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }
 @media (max-width: 800px) {

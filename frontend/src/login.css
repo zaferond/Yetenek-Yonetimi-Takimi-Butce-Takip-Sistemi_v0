@@ -25,11 +25,11 @@
   flex-direction: column;
   padding: 36px;
   background: var(--brand-dark);
-  color: white;
+  color: var(--on-dark);
   gap: 40px;
 }
 .auth-brand-label {
-  color: #ded3e5;
+  color: var(--on-dark-muted);
   font-size: var(--fs-xs);
   letter-spacing: 2px;
   font-weight: 500;
@@ -39,7 +39,7 @@
 }
 .auth-kicker {
   display: block;
-  color: #ded3e5;
+  color: var(--on-dark-muted);
   font-size: var(--fs-xs);
   letter-spacing: 1.2px;
   margin-bottom: 16px;
@@ -52,12 +52,12 @@
 }
 .auth-brand p {
   margin-top: 20px;
-  color: #ded3e5;
+  color: var(--on-dark-muted);
   font-size: var(--fs-md);
   line-height: 1.8;
 }
 .auth-brand-footer {
-  color: #ded3e5;
+  color: var(--on-dark-muted);
   font-size: var(--fs-xs);
   line-height: 1.7;
 }
@@ -170,7 +170,7 @@
   border: 1px solid var(--brand-primary);
   border-radius: var(--radius-md);
   background: var(--brand-primary);
-  color: white;
+  color: var(--on-dark);
   font-size: var(--fs-md);
   font-weight: 600;
   padding: 12px;

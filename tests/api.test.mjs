@@ -33,7 +33,7 @@ test("API oturum, CSRF, login sınırı, atomik kayıt ve çıkış", async () =
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   try {
-    assert.equal((await request("/state?year=2026")).status, 401);
+    assert.equal((await request("/state?year=2027")).status, 401);
     assert.equal(
       (
         await request(
@@ -54,7 +54,7 @@ test("API oturum, CSRF, login sınırı, atomik kayıt ve çıkış", async () =
     assert.match(login.headers.get("set-cookie"), /HttpOnly/);
     assert.match(login.headers.get("set-cookie"), /SameSite=Strict/);
     csrf = (await login.json()).csrf;
-    let state = await (await request("/state?year=2026")).json();
+    let state = await (await request("/state?year=2027")).json();
     assert.equal(state.rows.length, 11);
     const body = {
       revision: state.revision,
@@ -67,25 +67,28 @@ test("API oturum, CSRF, login sınırı, atomik kayıt ve çıkış", async () =
     );
     assert.equal((await request("/plan", "PUT", body)).status, 200);
     assert.equal((await request("/plan", "PUT", body)).status, 409);
-    state = await (await request("/state?year=2026")).json();
+    state = await (await request("/state?year=2027")).json();
     assert.equal(state.rows[0].months[0].plan, "100000000000");
     assert.equal(
       (
         await request("/invoices", "POST", {
           revision: state.revision,
           number: "0003",
-          year: 2026,
+          year: 2027,
           month: 13,
           lines: [],
         })
       ).status,
       400,
     );
-    const logs = await (await request("/audit")).json();
+    const logs = (await (await request("/audit")).json()).filter(
+      (l) => l.entity !== "sessions",
+    );
     assert.equal(logs.length, 1);
     assert.equal(logs[0].username, "test");
     assert.equal((await request("/auth/logout", "POST", {})).status, 200);
-    assert.equal((await request("/state?year=2026")).status, 401);
+    assert.equal((await request("/state?year=2027")).status, 401);
+    // IP başına sınır: 10 hatalı deneme 401, 11. deneme 429.
     for (let i = 0; i < 10; i++)
       assert.equal(
         (

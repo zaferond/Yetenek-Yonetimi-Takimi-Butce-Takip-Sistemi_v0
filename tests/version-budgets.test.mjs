@@ -30,35 +30,35 @@ const fields = {
 test("Yeni yılın bütçesi boş aylık plana rağmen tüm versiyonlara otomatik yansır", () => {
   const s = setup();
   try {
-    const first = s.createYear({ year: 2027, reference: "1000000,123456" });
-    let state = s.snapshot(2027, first.id);
+    const first = s.createYear({ year: 2028, reference: "1000000,123456" });
+    let state = s.snapshot(2028, first.id);
     assert.equal(state.version.effective_budget_units, "1000000123456");
     assert.equal(state.versions[0].total_units, "0");
     const second = s.createVersion({
-      year: 2027,
+      year: 2028,
       name: "V2",
       description: "Değişiklik yok",
       source_id: first.id,
       budget_changed: false,
     });
     assert.equal(
-      s.snapshot(2027, second.id).version.effective_budget_units,
+      s.snapshot(2028, second.id).version.effective_budget_units,
       "1000000123456",
     );
     s.updateReference({
-      year: 2027,
+      year: 2028,
       version_id: second.id,
       reference: "2000000",
     });
     assert.equal(
-      s.snapshot(2027, first.id).version.effective_budget_units,
+      s.snapshot(2028, first.id).version.effective_budget_units,
       units(2000000),
     );
     assert.equal(
-      s.snapshot(2027, second.id).version.effective_budget_units,
+      s.snapshot(2028, second.id).version.effective_budget_units,
       units(2000000),
     );
-    assert.ok(s.snapshot(2027).rows.every((r) => r.plan === "0"));
+    assert.ok(s.snapshot(2028).rows.every((r) => r.plan === "0"));
   } finally {
     s.close();
   }
@@ -67,9 +67,9 @@ test("Yeni yılın bütçesi boş aylık plana rağmen tüm versiyonlara otomati
 test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, tasarrufları ve aktifliği korur", () => {
   const s = setup();
   try {
-    const source = s.snapshot(2026).version;
+    const source = s.snapshot(2027).version;
     const version = write(s, null, () =>
-      s.createVersion({ ...fields, year: 2026, source_id: source.id }),
+      s.createVersion({ ...fields, year: 2027, source_id: source.id }),
     );
     s.activateVersion(version.id);
     s.saveSaving({
@@ -81,7 +81,7 @@ test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, t
       "SELECT category_id,month,amount_units FROM budget_lines WHERE version_id=? ORDER BY category_id,month",
       version.id,
     );
-    const invoices = s.snapshot(2026).invoices;
+    const invoices = s.snapshot(2027).invoices;
     write(s, version.id, () =>
       s.updateVersion(
         {
@@ -93,7 +93,7 @@ test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, t
         version.id,
       ),
     );
-    let state = s.snapshot(2026, version.id);
+    let state = s.snapshot(2027, version.id);
     assert.equal(state.version.effective_budget_units, "1950000000001");
     assert.equal(state.version.name, "Güncellenen plan");
     assert.equal(state.version.description, "Yeni açıklama");
@@ -108,30 +108,30 @@ test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, t
       lines,
     );
     assert.equal(
-      s.snapshot(2026, source.id).version.effective_budget_units,
+      s.snapshot(2027, source.id).version.effective_budget_units,
       units(2400000),
     );
     assert.equal(
-      state.years.find((y) => y.year === 2026).reference_units,
+      state.years.find((y) => y.year === 2027).reference_units,
       units(2400000),
     );
     // The budget card updates the selected revision while preserving earlier revisions.
     s.updateReference({
-      year: 2026,
+      year: 2027,
       version_id: version.id,
       reference: "1800000",
     });
     assert.equal(
-      s.snapshot(2026, version.id).version.effective_budget_units,
+      s.snapshot(2027, version.id).version.effective_budget_units,
       units(1800000),
     );
     assert.equal(
-      s.snapshot(2026, source.id).version.effective_budget_units,
+      s.snapshot(2027, source.id).version.effective_budget_units,
       units(2400000),
     );
     // Copying without a budget change inherits a revised annual budget as well as its monthly plan.
     const copy = s.createVersion({
-      year: 2026,
+      year: 2027,
       name: "Devam",
       description: "Aynı bütçe",
       source_id: version.id,
@@ -146,7 +146,7 @@ test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, t
       copy.id,
     );
     assert.equal(
-      s.snapshot(2026, copy.id).version.effective_budget_units,
+      s.snapshot(2027, copy.id).version.effective_budget_units,
       units(1800000),
     );
     // Explicitly reverting a changed budget uses the year's budget again.
@@ -159,7 +159,7 @@ test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, t
       version.id,
     );
     assert.equal(
-      s.snapshot(2026, version.id).version.effective_budget_units,
+      s.snapshot(2027, version.id).version.effective_budget_units,
       units(2400000),
     );
   } finally {
@@ -170,8 +170,8 @@ test("Güncel bütçe ve versiyon düzenleme aylık dağılımı, faturaları, t
 test("Eksik/yanlış bütçe ve aynı isimli versiyon güncellemeleri atomik reddedilir", () => {
   const s = setup();
   try {
-    const version = s.snapshot(2026).version,
-      before = JSON.stringify(s.snapshot(2026)),
+    const version = s.snapshot(2027).version,
+      before = JSON.stringify(s.snapshot(2027)),
       revision = s.revision();
     for (const budget of [undefined, "", "-1", "1.25", "1,0000001"])
       assert.throws(() =>
@@ -195,16 +195,16 @@ test("Eksik/yanlış bütçe ve aynı isimli versiyon güncellemeleri atomik red
     );
     assert.throws(() =>
       write(s, null, () =>
-        s.createVersion({ ...fields, year: 2026, budget: "" }),
+        s.createVersion({ ...fields, year: 2027, budget: "" }),
       ),
     );
     assert.equal(s.revision(), revision);
-    assert.equal(JSON.stringify(s.snapshot(2026)), before);
+    assert.equal(JSON.stringify(s.snapshot(2027)), before);
     write(s, version.id, () =>
       s.updateVersion({ ...fields, budget: "0" }, version.id),
     );
     assert.equal(
-      s.snapshot(2026, version.id).version.effective_budget_units,
+      s.snapshot(2027, version.id).version.effective_budget_units,
       "0",
     );
   } finally {
@@ -283,7 +283,7 @@ test("Versiyon API düzenleme yetkileri, revizyon çakışması ve işlem geçmi
   try {
     const editor = await login("test"),
       viewer = await login("viewer"),
-      version = s.snapshot(2026).version;
+      version = s.snapshot(2027).version;
     const body = { ...fields, revision: s.revision() };
     assert.equal(
       (await viewer(`/versions/${version.id}`, "PUT", body)).status,
@@ -298,7 +298,7 @@ test("Versiyon API düzenleme yetkileri, revizyon çakışması ve işlem geçmi
       409,
     );
     const state = await (
-      await editor(`/state?year=2026&version=${version.id}`, "GET")
+      await editor(`/state?year=2027&version=${version.id}`, "GET")
     ).json();
     assert.equal(
       state.versions.find((v) => v.id === version.id).effective_budget_units,

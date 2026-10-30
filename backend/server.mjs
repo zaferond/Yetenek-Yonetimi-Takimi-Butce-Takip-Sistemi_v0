@@ -21,7 +21,17 @@ if (!store.get("SELECT id FROM users LIMIT 1")) {
 const app = await createApp(store, {
   origin,
   secure: process.env.COOKIE_SECURE === "true",
+  dev: process.argv.includes("--dev"),
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 });
+// TRUST_PROXY: boş/false → kapalı (varsayılan); true → tüm vekiller;
+// sayı → vekil atlama sayısı; diğer değerler Express'e aynen verilir (ör. "loopback").
+function parseTrustProxy(value) {
+  if (!value || value === "false") return false;
+  if (value === "true") return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
 if (process.argv.includes("--dev")) {
   const { createServer } = await import("vite");
   const vite = await createServer({

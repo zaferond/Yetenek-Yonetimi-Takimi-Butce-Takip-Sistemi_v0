@@ -75,7 +75,6 @@ export function Modal({
     >
       <header>
         <div>
-          <span className="eyebrow">YETENEK YÖNETİMİ</span>
           <h2 id={titleId}>{title}</h2>
         </div>
         <button

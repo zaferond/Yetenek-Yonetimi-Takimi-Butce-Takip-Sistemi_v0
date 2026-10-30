@@ -15,11 +15,16 @@ import {
   rate,
 } from "../shared/domain.mjs";
 const now = () => new Date().toISOString();
+const SESSION_PURGE_MS = 15 * 60 * 1000;
 export class Store {
   constructor(path = process.env.DB_PATH || "./data/budget.sqlite") {
     if (path !== ":memory:")
       mkdirSync(dirname(resolve(path)), { recursive: true });
     this.db = new DatabaseSync(path);
+    this.statements = new Map();
+    this.db.exec(
+      "PRAGMA busy_timeout = 5000; PRAGMA synchronous = NORMAL; PRAGMA temp_store = MEMORY;",
+    );
     this.db.exec(
       readFileSync(new URL("./schema.sql", import.meta.url), "utf8"),
     );
@@ -71,11 +76,62 @@ export class Store {
         this.db.exec(
           "ALTER TABLE budget_versions ADD COLUMN budget_units INTEGER CHECK(budget_units>=0)",
         );
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS invoice_line_topic ON invoice_lines(training_topic_id)",
+      );
       this.run("UPDATE meta SET value='5' WHERE key='schema_version'");
     });
+    this.foreignKeyProblems = this.checkForeignKeys();
+    this.purgeExpiredSessions();
+    this.sessionTimer = setInterval(
+      () => this.purgeExpiredSessions(),
+      SESSION_PURGE_MS,
+    );
+    this.sessionTimer.unref?.();
+  }
+  // Açılışta yabancı anahtar bütünlüğü denetlenir; ihlal uygulamayı durdurmaz.
+  checkForeignKeys() {
+    let rows;
+    try {
+      rows = this.db.prepare("PRAGMA foreign_key_check").all();
+    } catch (e) {
+      console.warn("Uyarı: yabancı anahtar denetimi çalıştırılamadı:", e.message);
+      return [];
+    }
+    if (rows.length) {
+      const byTable = {};
+      for (const r of rows) byTable[r.table] = (byTable[r.table] || 0) + 1;
+      console.warn(
+        `Uyarı: veritabanında ${rows.length} yabancı anahtar ihlali bulundu (${Object.entries(
+          byTable,
+        )
+          .map(([t, n]) => `${t}: ${n}`)
+          .join(", ")}). Uygulama çalışmaya devam ediyor; yedek alıp kayıtları inceleyin.`,
+      );
+    }
+    return rows.map((r) => ({
+      table: r.table,
+      rowid: r.rowid === null ? null : Number(r.rowid),
+      parent: r.parent,
+      fkid: Number(r.fkid),
+    }));
+  }
+  prepare(sql) {
+    let stmt = this.statements.get(sql);
+    if (!stmt) {
+      stmt = this.db.prepare(sql);
+      this.statements.set(sql, stmt);
+    }
+    return stmt;
+  }
+  purgeExpiredSessions(now = Date.now()) {
+    if (!this.db.isOpen) return 0;
+    return Number(
+      this.prepare("DELETE FROM sessions WHERE expires_at<?").run(now).changes,
+    );
   }
   all(sql, ...args) {
-    const stmt = this.db.prepare(sql);
+    const stmt = this.prepare(sql);
     stmt.setReadBigInts(true);
     return stmt
       .all(...args)
@@ -96,7 +152,9 @@ export class Store {
     return this.all(sql, ...args)[0];
   }
   run(sql, ...args) {
-    return this.db.prepare(sql).run(...args);
+    const stmt = this.prepare(sql);
+    stmt.setReadBigInts(false);
+    return stmt.run(...args);
   }
   transaction(fn) {
     this.db.exec("BEGIN IMMEDIATE");
@@ -315,11 +373,15 @@ export class Store {
       !input.cells.length
     )
       throw new ValidationError("Kaydedilecek bütçe hücresi bulunamadı.");
-    const seen = new Set();
+    const seen = new Set(),
+      categoryIds = new Set(
+        this.all("SELECT id FROM budget_categories").map((c) => c.id),
+      );
     for (const cell of input.cells) {
       const category = integer(cell.category_id, "category_id", 1),
         month = integer(cell.month, "month", 1, 12);
-      this.exists("budget_categories", category);
+      if (!categoryIds.has(category))
+        throw new ValidationError("İlgili kayıt bulunamadı.", "id", 404);
       const key = `${category}:${month}`;
       if (seen.has(key))
         throw new ValidationError("Aynı hücre iki kez gönderilemez.");
@@ -844,10 +906,14 @@ export class Store {
     const invoices = this.all(
       "SELECT * FROM invoices WHERE year=? ORDER BY id DESC",
       year,
-    ).map((i) => ({
-      ...i,
-      lines: this.all("SELECT * FROM invoice_lines WHERE invoice_id=?", i.id),
-    }));
+    );
+    const linesByInvoice = new Map(invoices.map((i) => [i.id, []]));
+    for (const l of this.all(
+      "SELECT l.* FROM invoice_lines l JOIN invoices i ON i.id=l.invoice_id WHERE i.year=? ORDER BY l.id",
+      year,
+    ))
+      linesByInvoice.get(l.invoice_id).push(l);
+    for (const i of invoices) i.lines = linesByInvoice.get(i.id);
     const links = this.all(
       "SELECT l.* FROM planned_payment_invoice_links l JOIN planned_payments p ON p.id=l.payment_id WHERE p.year=?",
       year,
@@ -863,19 +929,20 @@ export class Store {
           note: i.note,
         })),
       );
-    const payments = this.all(
+    const paymentRows = this.all(
       "SELECT * FROM planned_payments WHERE year=? ORDER BY id DESC",
       year,
-    ).map((p) => {
-      const linked = sum(
-        links
-          .filter(
-            (l) =>
-              l.payment_id === p.id &&
-              activeLines.some((il) => il.id === l.line_id),
-          )
-          .map((l) => l.amount_units),
-      );
+    );
+    const activeLineIds = new Set(activeLines.map((l) => l.id)),
+      linkedByPayment = new Map();
+    for (const l of links)
+      if (activeLineIds.has(l.line_id)) {
+        const list = linkedByPayment.get(l.payment_id);
+        if (list) list.push(l.amount_units);
+        else linkedByPayment.set(l.payment_id, [l.amount_units]);
+      }
+    const payments = paymentRows.map((p) => {
+      const linked = sum(linkedByPayment.get(p.id) || []);
       return {
         ...p,
         linked_units: linked,
@@ -888,21 +955,31 @@ export class Store {
     const plans = version
       ? this.all("SELECT * FROM budget_lines WHERE version_id=?", version.id)
       : [];
+    const group = (map, key, value) => {
+      const list = map.get(key);
+      if (list) list.push(value);
+      else map.set(key, [value]);
+    };
+    const planByCell = new Map(),
+      actualByCell = new Map(),
+      pendingByCell = new Map(),
+      detailsByCategory = new Map();
+    for (const p of plans) {
+      const key = `${p.category_id}:${p.month}`;
+      if (!planByCell.has(key)) planByCell.set(key, p.amount_units);
+    }
+    for (const l of activeLines) {
+      group(actualByCell, `${l.category_id}:${l.month}`, l.amount_units);
+      group(detailsByCategory, l.category_id, l);
+    }
+    for (const p of payments)
+      group(pendingByCell, `${p.category_id}:${p.month}`, p.remaining_units);
     const rows = categories.map((c) => {
       const months = Array.from({ length: 12 }, (_, i) => {
-        const plan =
-          plans.find((p) => p.category_id === c.id && p.month === i + 1)
-            ?.amount_units || "0";
-        const actual = sum(
-          activeLines
-            .filter((l) => l.category_id === c.id && l.month === i + 1)
-            .map((l) => l.amount_units),
-        );
-        const pending = sum(
-          payments
-            .filter((p) => p.category_id === c.id && p.month === i + 1)
-            .map((p) => p.remaining_units),
-        );
+        const key = `${c.id}:${i + 1}`;
+        const plan = planByCell.get(key) || "0";
+        const actual = sum(actualByCell.get(key) || []);
+        const pending = sum(pendingByCell.get(key) || []);
         return { plan, actual, pending };
       });
       const plan = sum(months.map((m) => m.plan)),
@@ -918,17 +995,18 @@ export class Store {
         remaining,
         available: subtract(remaining, pending),
         usage: rate(actual, plan),
-        details: activeLines.filter((l) => l.category_id === c.id),
+        details: detailsByCategory.get(c.id) || [],
       };
     });
+    const unitsByVersion = new Map();
+    for (const l of this.all(
+      "SELECT l.version_id,l.amount_units FROM budget_lines l JOIN budget_versions v ON v.id=l.version_id WHERE v.year=?",
+      year,
+    ))
+      group(unitsByVersion, l.version_id, l.amount_units);
     const versionTotals = versions.map((v) => ({
       ...v,
-      total_units: sum(
-        this.all(
-          "SELECT amount_units FROM budget_lines WHERE version_id=?",
-          v.id,
-        ).map((l) => l.amount_units),
-      ),
+      total_units: sum(unitsByVersion.get(v.id) || []),
     }));
     return {
       revision: this.revision(),
@@ -962,7 +1040,7 @@ export class Store {
         i,
       ),
     );
-    const { id: v1 } = this.createYear({ year: 2026, reference: "2400000" });
+    const { id: v1 } = this.createYear({ year: 2027, reference: "2400000" });
     for (let c = 1; c <= 11; c++)
       for (let m = 1; m <= 12; m++)
         this.run(
@@ -977,7 +1055,7 @@ export class Store {
           ) * 1000000n,
         );
     const v2 = this.createVersion({
-      year: 2026,
+      year: 2027,
       name: "V2",
       description: "Örnek tasarruf revizyonu",
       source_id: v1,
@@ -1003,7 +1081,7 @@ export class Store {
     [1, 1, 4, 5, 8, 6].forEach((c, i) =>
       this.saveInvoice({
         number: `000${i + 1}-DEMO`,
-        year: 2026,
+        year: 2027,
         month: i + 1,
         note: "Kurgusal örnek kayıt",
         lines: [
@@ -1021,7 +1099,7 @@ export class Store {
     );
     this.savePayment({
       category_id: 5,
-      year: 2026,
+      year: 2027,
       month: 4,
       description: "Örnek teknik eğitim planı",
       amount: "40000",
@@ -1029,13 +1107,15 @@ export class Store {
     this.linkPayment({ payment_id: 1, line_id: 4, amount: "20000" });
     this.savePayment({
       category_id: 4,
-      year: 2026,
+      year: 2027,
       month: 11,
       description: "İletişim ve geri bildirim atölyesi",
       amount: "25000",
     });
   }
   close() {
-    this.db.close();
+    clearInterval(this.sessionTimer);
+    this.statements.clear();
+    if (this.db.isOpen) this.db.close();
   }
 }

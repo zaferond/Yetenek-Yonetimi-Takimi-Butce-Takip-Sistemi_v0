@@ -3,6 +3,7 @@ import { budgetView } from "../shared/report-scope.mjs";
 import {
   createWorkbook,
   amountCell,
+  moneyCell,
   amountFormat,
   sheet,
   styleHeader,
@@ -87,7 +88,7 @@ export async function budgetWorkbook(store, year, versionId, options = {}) {
     title.font = { name: "Calibri", bold: true, color: { argb: "FF665078" } };
     ws.mergeCells(5, first, 5, last);
     const amount = ws.getCell(5, first);
-    amount.value = amountCell(value);
+    amount.value = moneyCell(value);
     amount.numFmt = amountFormat;
     amount.font = { name: "Calibri", bold: true, size: 18 };
   });
@@ -120,16 +121,16 @@ export async function budgetWorkbook(store, year, versionId, options = {}) {
     const plan = ws.addRow([
       name,
       "Planlanan",
-      ...months.map((m) => amountCell(m.plan)),
+      ...months.map((m) => moneyCell(m.plan)),
       ...["plan", "actual", "remaining", "pending", "available"].map((key) =>
-        amountCell(summary[key]),
+        moneyCell(summary[key]),
       ),
       summary.usage ?? "—",
     ]);
     const actual = ws.addRow([
       name,
       "Gerçekleşen",
-      ...months.map((m) => amountCell(m.actual)),
+      ...months.map((m) => moneyCell(m.actual)),
     ]);
     for (const row of [plan, actual]) {
       row.height = 34;
@@ -201,21 +202,22 @@ export async function budgetWorkbook(store, year, versionId, options = {}) {
         l.year,
         MONTHS[l.month - 1],
         l.number,
-        amountCell(l.amount_units),
+        moneyCell(l.amount_units),
         l.participant_count,
         l.rd_participant_count,
         l.other_participant_count,
         l.description,
         l.note,
-        l.foreign_units === null ? "" : amountCell(l.foreign_units),
+        l.foreign_units === null ? "" : moneyCell(l.foreign_units),
         l.currency,
         l.rate_units === null ? "" : amountCell(l.rate_units),
         l.id,
       ]),
     ),
   );
-  for (const index of [6, 12, 14])
+  for (const index of [6, 12])
     details.getColumn(index).numFmt = amountFormat;
+  details.getColumn(14).numFmt = "#,##0.00####";
   details.getColumn(1).width = 38;
   details.getColumn(2).width = 38;
   details.getColumn(10).width = 42;

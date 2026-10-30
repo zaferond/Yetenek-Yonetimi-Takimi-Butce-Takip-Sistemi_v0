@@ -98,7 +98,7 @@ test("Admin yetkisi, görüntüleyici yazma yasağı, son yönetici koruması, o
         403,
       );
     }
-    assert.equal((await viewer.request("/state?year=2026")).status, 200);
+    assert.equal((await viewer.request("/state?year=2027")).status, 200);
     assert.equal(
       (
         await viewer.request("/years", "POST", {
@@ -144,7 +144,7 @@ test("Admin yetkisi, görüntüleyici yazma yasağı, son yönetici koruması, o
         .status,
       200,
     );
-    assert.equal((await editor.request("/state?year=2026")).status, 401);
+    assert.equal((await editor.request("/state?year=2027")).status, 401);
     const again = await login("editor");
     assert.equal(again.data.user.role, "viewer");
     assert.equal(
@@ -162,19 +162,21 @@ test("Admin yetkisi, görüntüleyici yazma yasağı, son yönetici koruması, o
       users.some((u) => "password_hash" in u),
       false,
     );
-    const logs = await (await admin.request("/audit")).json();
+    const allLogs = await (await admin.request("/audit")).json();
+    const logs = allLogs.filter((l) => l.entity !== "sessions");
     assert.equal(logs.length, 2);
+    assert.ok(!JSON.stringify(allLogs).includes(password));
     assert.ok(!JSON.stringify(logs).includes(password));
     assert.ok(!JSON.stringify(logs).includes(hash));
     assert.equal(
-      (await viewer.request("/invoices/export?year=2026&from=3&to=1")).status,
+      (await viewer.request("/invoices/export?year=2027&from=3&to=1")).status,
       400,
     );
     assert.equal(
-      (await viewer.request("/invoices/export?year=2026&from=1&to=2")).status,
+      (await viewer.request("/invoices/export?year=2027&from=1&to=2")).status,
       200,
     );
-    assert.equal((await raw("/invoices/export?year=2026")).status, 401);
+    assert.equal((await raw("/invoices/export?year=2027")).status, 401);
   } finally {
     await new Promise((r) => server.close(r));
     s.close();
@@ -201,10 +203,10 @@ test("Excel yıl/ay/aralık filtresi, iptaller, baştaki sıfırlar ve altı ond
     ]) {
       const book = new ExcelJS.Workbook();
       await book.xlsx.load(
-        await invoiceWorkbook(s, 2026, from, to, { showCancelled: true }),
+        await invoiceWorkbook(s, 2027, from, to, { showCancelled: true }),
       );
       const expected = s.all(
-        "SELECT * FROM invoices WHERE year=2026 AND month BETWEEN ? AND ?",
+        "SELECT * FROM invoices WHERE year=2027 AND month BETWEEN ? AND ?",
         from,
         to,
       );
@@ -228,7 +230,7 @@ test("Excel yıl/ay/aralık filtresi, iptaller, baştaki sıfırlar ve altı ond
         const line = lines
           .getRows(2, lines.rowCount - 1)
           .find((r) => r.getCell(2).value === "000001");
-        assert.equal(line.getCell(13).value, "123456789012,345678");
+        assert.equal(line.getCell(13).value, 123456789012.35);
         assert.equal(line.getCell(14).value, "123456789012345678");
         assert.equal(line.getCell(17).value, "EUR");
         assert.equal(line.getCell(23).value, "Ayrıntı");
@@ -312,11 +314,11 @@ test("Versiyon değişikliği var/yok kaydı planı dağıtmaz; yıl bütçesi a
   const s = new Store(":memory:");
   s.seedDemo();
   try {
-    const base = s.snapshot(2026).version;
+    const base = s.snapshot(2027).version;
     for (const changed of [true, false]) {
       const created = s.transaction(() =>
         s.createVersion({
-          year: 2026,
+          year: 2027,
           name: changed ? "Var" : "Yok",
           description: "Açıklama",
           source_id: base.id,
@@ -341,7 +343,7 @@ test("Versiyon değişikliği var/yok kaydı planı dağıtmaz; yıl bütçesi a
       () =>
         s.transaction(() =>
           s.createVersion({
-            year: 2026,
+            year: 2027,
             name: "invalid",
             description: "x",
             budget_changed: "yes",

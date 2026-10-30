@@ -12,19 +12,80 @@ import {
 } from "./auth.mjs";
 export async function createApp(
   store,
-  { origin = "http://127.0.0.1:3100", secure = false } = {},
+  {
+    origin = "http://127.0.0.1:3100",
+    secure = false,
+    dev = false,
+    trustProxy = false,
+    maxLoginKeys = 10000,
+  } = {},
 ) {
   const app = express(),
     failures = new Map(),
     dummyHash = await hashPassword(token());
   app.disable("x-powered-by");
+  if (trustProxy !== false && trustProxy !== undefined && trustProxy !== "")
+    app.set("trust proxy", trustProxy);
+  const WINDOW = 15 * 60000,
+    IP_LIMIT = 10,
+    MAX_KEYS = maxLoginKeys;
+  // Süresi dolan kayıtlar her istekte değil, periyodik olarak temizlenir.
+  const pruneExpired = (time = Date.now()) => {
+    for (const [k, v] of failures) if (v.until <= time) failures.delete(k);
+  };
+  const pruneTimer = setInterval(pruneExpired, 60000);
+  pruneTimer.unref?.();
+  const originalClose = store.close.bind(store);
+  store.close = () => {
+    clearInterval(pruneTimer);
+    failures.clear();
+    stateCache.clear();
+    return originalClose();
+  };
+  // Üst sınır: en eski kayıtlar (Map ekleme sırası) atılır; maliyet sınırlı.
+  const capKeys = () => {
+    while (failures.size > MAX_KEYS)
+      failures.delete(failures.keys().next().value);
+  };
+  const stateCache = new Map(),
+    STATE_CACHE_MAX = 20;
+  const blocked = (key, limit, time) => {
+    const v = failures.get(key);
+    return v && v.until > time && v.count >= limit ? v : null;
+  };
+  const fail = (key, time) => {
+    const v = failures.get(key);
+    if (v && v.until > time) v.count++;
+    else {
+      failures.delete(key);
+      failures.set(key, { count: 1, until: time + WINDOW });
+    }
+  };
+  const authAudit = (userId, action, details) => {
+    try {
+      store.run(
+        "INSERT INTO audit_logs(user_id,action,entity,entity_id,before_json,after_json,created_at) VALUES (?,?,?,?,?,?,?)",
+        userId,
+        action,
+        "sessions",
+        userId,
+        null,
+        JSON.stringify(details),
+        new Date().toISOString(),
+      );
+    } catch (e) {
+      console.error("Giriş kaydı yazılamadı:", e.message);
+    }
+  };
   app.use((req, res, next) => {
     res.set({
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "same-origin",
       "X-Frame-Options": "DENY",
       "Content-Security-Policy":
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws:; frame-ancestors 'none'",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" +
+        (dev ? " ws:" : "") +
+        "; frame-ancestors 'none'",
     });
     if (req.path.startsWith("/api/")) res.set("Cache-Control", "no-store");
     next();
@@ -51,47 +112,52 @@ export async function createApp(
     });
   app.post("/api/auth/login", async (req, res, next) => {
     try {
-      const key = req.ip,
-        time = Date.now();
-      for (const [k, v] of failures) if (v.until < time) failures.delete(k);
-      const limiter = failures.get(key) || {
-        count: 0,
-        until: time + 15 * 60000,
-      };
-      if (limiter.count >= 10) {
+      const time = Date.now(),
+        ipKey = `ip:${req.ip}`;
+      const { username, password, remember } = req.body || {};
+      const name =
+        typeof username === "string" && username.length <= 100
+          ? username.trim().toLocaleLowerCase("tr-TR")
+          : "";
+      const limited = blocked(ipKey, IP_LIMIT, time);
+      if (limited) {
         res.set(
           "Retry-After",
-          String(Math.ceil((limiter.until - time) / 1000)),
+          String(Math.ceil((limited.until - time) / 1000)),
         );
         return res.status(429).json({
           error: "Çok fazla giriş denemesi. 15 dakika sonra yeniden deneyin.",
         });
       }
-      limiter.count++;
-      failures.set(key, limiter);
-      const { username, password, remember } = req.body || {};
+      const reject = () => {
+        fail(ipKey, time);
+        capKeys();
+        return res
+          .status(401)
+          .json({ error: "Kullanıcı adı veya parola hatalı." });
+      };
       if (
         typeof username !== "string" ||
         typeof password !== "string" ||
         password.length > 256 ||
         username.length > 100
       )
-        return res
-          .status(401)
-          .json({ error: "Kullanıcı adı veya parola hatalı." });
-      const user = store.get(
-        "SELECT * FROM users WHERE username=?",
-        username.trim().toLocaleLowerCase("tr-TR"),
-      );
+        return reject();
+      const user = store.get("SELECT * FROM users WHERE username=?", name);
       const valid = await verifyPassword(
         password,
         user?.password_hash || dummyHash,
       );
-      if (!user || !valid)
-        return res
-          .status(401)
-          .json({ error: "Kullanıcı adı veya parola hatalı." });
-      failures.delete(key);
+      if (!user || !valid) {
+        // audit_logs.user_id zorunlu olduğu için bilinmeyen kullanıcı adı
+        // yalnız sunucu günlüğüne yazılır; parola hiçbir yerde loglanmaz.
+        if (user) authAudit(user.id, "Başarısız giriş", { ip: req.ip });
+        else
+          console.warn(
+            `Başarısız giriş: bilinmeyen kullanıcı adı (ip: ${req.ip})`,
+          );
+        return reject();
+      }
       const value = token(),
         csrf = token(),
         ttl = remember === true ? 7 * 86400000 : 8 * 3600000;
@@ -108,6 +174,10 @@ export async function createApp(
         time + ttl,
       );
       cookie(res, value, ttl);
+      authAudit(user.id, "Giriş yapıldı", {
+        ip: req.ip,
+        remember: ttl > 8 * 3600000,
+      });
       res.json({
         user: { id: user.id, username: user.username, role: user.role },
         csrf,
@@ -151,25 +221,48 @@ export async function createApp(
       "DELETE FROM sessions WHERE token_hash=?",
       req.session.token_hash,
     );
+    authAudit(req.session.user_id, "Çıkış yapıldı", { ip: req.ip });
     cookie(res, "", 0);
     res.json({ ok: true });
   });
   app.get("/api/state", (req, res) => {
-    const year = integer(
-      req.query.year || 2027,
-      "year",
-      2000,
-      2100,
-    );
-    res.json(store.snapshot(year, Number(req.query.version) || undefined));
+    const year = integer(req.query.year || 2027, "year", 2000, 2100);
+    const version = req.query.version
+      ? integer(req.query.version, "version", 1)
+      : undefined;
+    const revision = store.revision(),
+      role = req.session?.role ?? "",
+      etag = `W/"s-${revision}-${year}-${version ?? "a"}-${role}"`;
+    res.set({ "Cache-Control": "no-cache, private", ETag: etag });
+    const inm = req.headers["if-none-match"];
+    if (inm && inm.split(",").some((t) => t.trim() === etag))
+      return res.status(304).end();
+    const key = `${revision}:${year}:${version ?? ""}`;
+    let body = stateCache.get(key);
+    if (!body) {
+      body = JSON.stringify(store.snapshot(year, version));
+      for (const k of stateCache.keys())
+        if (!k.startsWith(`${revision}:`)) stateCache.delete(k);
+      while (stateCache.size >= STATE_CACHE_MAX)
+        stateCache.delete(stateCache.keys().next().value);
+      stateCache.set(key, body);
+    }
+    res.type("application/json").send(body);
   });
-  app.get("/api/audit", requireAdmin, (req, res) =>
+  app.get("/api/audit", requireAdmin, (req, res) => {
+    // Geriye uyumlu: parametresiz istek son 200 kaydı döndürür.
+    const limit = integer(req.query.limit || 200, "limit", 1, 1000),
+      before = req.query.before
+        ? integer(req.query.before, "before", 1)
+        : Number.MAX_SAFE_INTEGER;
     res.json(
       store.all(
-        "SELECT a.*,u.username FROM audit_logs a JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200",
+        "SELECT a.*,u.username FROM audit_logs a JOIN users u ON u.id=a.user_id WHERE a.id<? ORDER BY a.id DESC LIMIT ?",
+        before,
+        limit,
       ),
-    ),
-  );
+    );
+  });
   registerAdmin(app, store);
   const exportOptions = (query) => {
     const year = integer(query.year, "year", 2000, 2100);

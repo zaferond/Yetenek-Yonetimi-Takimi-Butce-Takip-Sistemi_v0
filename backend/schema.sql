@@ -19,3 +19,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY, user_id INTEGER N
 CREATE INDEX IF NOT EXISTS invoice_period ON invoices(year,month,status);
 CREATE INDEX IF NOT EXISTS line_category ON invoice_lines(category_id,invoice_id);
 CREATE INDEX IF NOT EXISTS payment_period ON planned_payments(year,month,status);
+CREATE INDEX IF NOT EXISTS invoice_lines_invoice ON invoice_lines(invoice_id);
+CREATE INDEX IF NOT EXISTS link_line ON planned_payment_invoice_links(line_id);
+CREATE INDEX IF NOT EXISTS budget_line_category ON budget_lines(category_id);
+CREATE INDEX IF NOT EXISTS payment_category ON planned_payments(category_id);
+CREATE INDEX IF NOT EXISTS saving_version ON savings_items(version_id);
+CREATE INDEX IF NOT EXISTS version_year ON budget_versions(year);
+CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS session_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS audit_user ON audit_logs(user_id);

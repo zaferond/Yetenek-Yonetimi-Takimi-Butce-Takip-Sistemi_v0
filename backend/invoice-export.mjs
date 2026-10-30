@@ -1,6 +1,27 @@
 import { MONTHS, sum } from "../shared/domain.mjs";
 import { invoiceView } from "../shared/report-scope.mjs";
-import { createWorkbook, decimal, sheet } from "./excel-export.mjs";
+import {
+  createWorkbook,
+  amountCell,
+  moneyCell,
+  amountFormat,
+  sheet,
+} from "./excel-export.mjs";
+
+const rateFormat = "#,##0.00####";
+// Nullable amounts (döviz/kur) stay empty. Amounts are 2-decimal numbers
+// (moneyCell); the rate keeps six decimals (amountCell).
+const optionalMoney = (units) =>
+  units === null || units === undefined ? "" : moneyCell(units);
+const optionalRate = (units) =>
+  units === null || units === undefined ? "" : amountCell(units);
+function formatColumns(ws, columns, numFmt) {
+  for (const column of columns) {
+    ws.getColumn(column).eachCell((cell, row) => {
+      if (row > 1 && typeof cell.value === "number") cell.numFmt = numFmt;
+    });
+  }
+}
 
 export async function invoiceWorkbook(store, year, from, to, options = {}) {
   const workbook = createWorkbook();
@@ -12,7 +33,7 @@ export async function invoiceWorkbook(store, year, from, to, options = {}) {
     )
     .filter((l) => ids.has(l.invoice_id));
   const invoiceMap = new Map(invoices.map((i) => [i.id, i]));
-  sheet(
+  const invoiceSheet = sheet(
     workbook,
     "Faturalar",
     [
@@ -25,7 +46,7 @@ export async function invoiceWorkbook(store, year, from, to, options = {}) {
       "Fatura Notu",
       "Oluşturma Tarihi",
       "Güncelleme Tarihi",
-      "Toplam TL (tam değer)",
+      "Toplam TL",
       "Toplam Mikro TL",
     ],
     invoices.map((i) => {
@@ -42,12 +63,13 @@ export async function invoiceWorkbook(store, year, from, to, options = {}) {
         i.note,
         i.created_at,
         i.updated_at,
-        decimal(total),
+        moneyCell(total),
         total,
       ];
     }),
   );
-  sheet(
+  formatColumns(invoiceSheet, [10], amountFormat);
+  const detailSheet = sheet(
     workbook,
     "Fatura Detayları",
     [
@@ -63,9 +85,9 @@ export async function invoiceWorkbook(store, year, from, to, options = {}) {
       "Eğitim Başlığı ID",
       "Eğitim Başlığı",
       "Eğitim Adı",
-      "Tutar TL (tam değer)",
+      "Tutar TL",
       "Tutar Mikro TL",
-      "Döviz Bedeli (tam değer)",
+      "Döviz Bedeli",
       "Döviz Mikro Birim",
       "Para Birimi",
       "Kur (tam değer)",
@@ -93,12 +115,12 @@ export async function invoiceWorkbook(store, year, from, to, options = {}) {
         l.training_topic_id ?? "",
         l.topic ?? "",
         l.training_name,
-        decimal(l.amount_units),
+        moneyCell(l.amount_units),
         l.amount_units,
-        decimal(l.foreign_units),
+        optionalMoney(l.foreign_units),
         l.foreign_units ?? "",
         l.currency,
-        decimal(l.rate_units),
+        optionalRate(l.rate_units),
         l.rate_units ?? "",
         l.participant_count,
         l.rd_participant_count,
@@ -110,5 +132,7 @@ export async function invoiceWorkbook(store, year, from, to, options = {}) {
       ];
     }),
   );
+  formatColumns(detailSheet, [13, 15], amountFormat);
+  formatColumns(detailSheet, [18], rateFormat);
   return workbook.xlsx.writeBuffer();
 }

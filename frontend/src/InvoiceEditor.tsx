@@ -360,7 +360,7 @@ export function InvoiceEditor({
             {!readonly && (
               <button
                 type="button"
-                className="button"
+                className="button add-line"
                 onClick={() => {
                   setLines([...lines, blankLine(data.categories[0]?.id)]);
                   setDirty(true);

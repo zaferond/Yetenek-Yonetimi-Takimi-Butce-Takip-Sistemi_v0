@@ -1,6 +1,7 @@
 import { AdminPage } from "./components/AdminPage";
 import { NewYearForm } from "./components/NewYearForm";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   Plus,
   Save,
@@ -57,7 +58,9 @@ export function Workspace({
     [showCancelled, setShowCancelled] = useState(false),
     [expanded, setExpanded] = useState<Set<number>>(new Set()),
     [draft, setDraft] = useState<Record<string, string>>({}),
-    [cellError, setCellError] = useState<Record<string, string>>({});
+    [cellError, setCellError] = useState<Record<string, string>>({}),
+    // Plan cells show the Turkish display format until focused for editing.
+    [focusedCell, setFocusedCell] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorSpec | null>(null),
     [invoiceEditor, setInvoiceEditor] = useState<{
       invoice?: Invoice;
@@ -88,6 +91,20 @@ export function Workspace({
   useEffect(() => {
     if (focusHeading.current) headingRef.current?.focus();
   }, [tab]);
+  useEffect(() => {
+    // Programmatic heading focus counts as :focus-visible in Chrome even after a
+    // click; remember the last input method so the cue shows for keyboard only.
+    const root = document.documentElement;
+    const pointer = () => (root.dataset.input = "pointer");
+    const keyboard = () => (root.dataset.input = "keyboard");
+    document.addEventListener("pointerdown", pointer, true);
+    document.addEventListener("keydown", keyboard, true);
+    return () => {
+      document.removeEventListener("pointerdown", pointer, true);
+      document.removeEventListener("keydown", keyboard, true);
+      delete root.dataset.input;
+    };
+  }, []);
   function navigate(next: Section) {
     if (loading || busy || editor || invoiceEditor || categoriesOpen) return;
     if (next === "admin" && user.role !== "admin") return;
@@ -590,7 +607,24 @@ export function Workspace({
                                     }
                                     inputMode="decimal"
                                     value={
-                                      changed ? draft[key] : editAmount(m.plan)
+                                      changed
+                                        ? draft[key]
+                                        : focusedCell === key
+                                          ? editAmount(m.plan)
+                                          : planDisplay(m.plan)
+                                    }
+                                    onFocus={(e) => {
+                                      if (changed) return;
+                                      // Swap to the editable form now, then select
+                                      // it, so typing replaces the whole value.
+                                      const input = e.currentTarget;
+                                      flushSync(() => setFocusedCell(key));
+                                      input.select();
+                                    }}
+                                    onBlur={() =>
+                                      setFocusedCell((current) =>
+                                        current === key ? null : current,
+                                      )
                                     }
                                     onChange={(e) => {
                                       setDraft({
@@ -728,7 +762,7 @@ export function Workspace({
                     </tbody>
                     <tfoot>
                       <tr>
-                        <th className="frozen">TOPLAM</th>
+                        <th className="frozen">Toplam</th>
                         {MONTHS.map((_, i) => (
                           <td key={i}>
                             {money(
@@ -813,8 +847,8 @@ export function Workspace({
                       <th>Fatura / Eğitim</th>
                       <th>Dönem</th>
                       <th>Bütçe kalemi</th>
-                      <th>Tutar · TL</th>
-                      <th>Katılımcı</th>
+                      <th className="numeric">Tutar · TL</th>
+                      <th className="numeric">Katılımcı</th>
                       <th>Durum</th>
                       <th>İşlem</th>
                     </tr>
@@ -845,7 +879,7 @@ export function Workspace({
                         <td className="numeric">
                           {money(sum(i.lines.map((l) => l.amount_units)))}
                         </td>
-                        <td>
+                        <td className="numeric">
                           {i.lines.reduce((a, l) => a + l.participant_count, 0)}
                         </td>
                         <td>
@@ -933,10 +967,10 @@ export function Workspace({
                     <tr>
                       <th>Açıklama / Bütçe kalemi</th>
                       <th>Dönem</th>
-                      <th>Planlanan · TL</th>
-                      <th>Faturalanan · TL</th>
-                      <th>Tasarruf · TL</th>
-                      <th>Bekleyen · TL</th>
+                      <th className="numeric">Planlanan · TL</th>
+                      <th className="numeric">Faturalanan · TL</th>
+                      <th className="numeric">Tasarruf · TL</th>
+                      <th className="numeric">Bekleyen · TL</th>
                       <th>Durum</th>
                       <th>İşlem</th>
                     </tr>
@@ -967,7 +1001,11 @@ export function Workspace({
                                 "status " +
                                 (p.status === "cancelled"
                                   ? "cancelled"
-                                  : "active")
+                                  : p.remaining_units === "0"
+                                    ? "done"
+                                    : p.linked_units === "0"
+                                      ? "planned"
+                                      : "partial")
                               }
                             >
                               {p.status === "cancelled"
@@ -1375,6 +1413,11 @@ function Metric({
       )}
     </article>
   );
+}
+/** Display-only: keeps every stored decimal (2–6 digits), so nothing is rounded away. */
+function planDisplay(units: string) {
+  const decimals = editAmount(units).split(",")[1]?.length ?? 0;
+  return money(units, Math.max(2, decimals));
 }
 function Usage({ row }: { row: BudgetRow }) {
   if (row.usage === null)

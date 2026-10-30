@@ -9,6 +9,11 @@ import { randomBytes } from "node:crypto";
 import { Store } from "../backend/store.mjs";
 import { createApp } from "../backend/app.mjs";
 import { hashPassword } from "../backend/auth.mjs";
+import { money } from "../shared/domain.mjs";
+// Excel writes TL amounts as numbers rounded half-up to 2 decimals (same rule as
+// money()); build the expected value from that text, never from float math.
+const excelMoney = (units) =>
+  Number(money(units).replaceAll(".", "").replace(",", ".").replace("−", "-"));
 const db = new Store(":memory:");
 db.seedDemo();
 const password = randomBytes(16).toString("hex");
@@ -330,7 +335,16 @@ try {
   await page.reload();
   await openSection("Bütçe Planlama & Takip");
   await cell.waitFor();
+  // Unfocused plan cells show the Turkish display format without rounding;
+  // focusing switches to the editable form.
+  assert.equal(await cell.inputValue(), "100.000,123456");
+  await cell.focus();
   assert.equal(await cell.inputValue(), "100000,123456");
+  await cell.blur();
+  assert.equal(await cell.inputValue(), "100.000,123456");
+  await expect(
+    page.getByRole("button", { name: "Bütçeyi kaydet", exact: true }),
+  ).toHaveCount(0);
   await openSection("Faturalar");
   await page.getByRole("button", { name: "Yeni fatura", exact: true }).click();
   assert.equal(
@@ -427,7 +441,7 @@ try {
     .click();
   await page.getByText("UI Kabul Eğitimi", { exact: true }).waitFor();
   assert.equal(
-    db.snapshot(2026).invoices.find((i) => i.number === "000099").lines.length,
+    db.snapshot(2027).invoices.find((i) => i.number === "000099").lines.length,
     2,
   );
   await openSection("Planlı Ödemeler");
@@ -465,7 +479,7 @@ try {
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.match(await row.innerText(), /Kısmi fatura/);
   assert.equal(
-    db.snapshot(2026).payments.find((p) => p.description === "UI Planlı Ödeme")
+    db.snapshot(2027).payments.find((p) => p.description === "UI Planlı Ödeme")
       .linked_units,
     "52000000000",
   );
@@ -483,7 +497,7 @@ try {
   await page.getByRole("button", { name: "Kaydet", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(
-    db.snapshot(2026).payments.find((p) => p.description === "UI Planlı Ödeme")
+    db.snapshot(2027).payments.find((p) => p.description === "UI Planlı Ödeme")
       .remaining_units,
     "18000000000",
   );
@@ -518,7 +532,7 @@ try {
     0,
   );
   await expect(
-    page.getByText("2026 Bütçe − seçili plan", { exact: true }),
+    page.getByText("2027 Bütçe − seçili plan", { exact: true }),
   ).toHaveCount(0);
   const savingBudget = page
     .locator(".metric")
@@ -574,7 +588,7 @@ try {
     .click();
   await expect(savingRow).toHaveCount(0);
   assert.equal(
-    db.snapshot(2026).payments.find((p) => p.description === "UI Planlı Ödeme")
+    db.snapshot(2027).payments.find((p) => p.description === "UI Planlı Ödeme")
       .remaining_units,
     "48000000000",
   );
@@ -594,7 +608,7 @@ try {
     1,
   );
   await screenshot("savings");
-  assert.equal(db.snapshot(2026).invoices.length, 7);
+  assert.equal(db.snapshot(2027).invoices.length, 7);
   await openSection("Faturalar");
   await screenshot("invoices");
   const invRow = page.getByRole("row").filter({ hasText: "000099" });
@@ -613,7 +627,7 @@ try {
     .click();
   await invRow.waitFor({ state: "hidden" });
   const payment = db
-    .snapshot(2026)
+    .snapshot(2027)
     .payments.find((p) => p.description === "UI Planlı Ödeme");
   assert.equal(payment.remaining_units, "53000000000");
   assert.equal(payment.saving_units, "30000000000");
@@ -704,7 +718,7 @@ try {
   await page.unroute("**/api/state?**");
   // An empty year has usable navigation and forms, without inventing a plan.
   const emptyState = {
-    ...db.snapshot(2026),
+    ...db.snapshot(2027),
     version: undefined,
     versions: [],
     rows: [],
@@ -746,13 +760,13 @@ try {
     .getByRole("button", { name: "Excel'e aktar", exact: true })
     .click();
   const download = await downloadPromise;
-  assert.equal(download.suggestedFilename(), "faturalar-2026-1-2.xlsx");
+  assert.equal(download.suggestedFilename(), "faturalar-2027-1-2.xlsx");
   const book = new ExcelJS.Workbook();
   await book.xlsx.readFile(await download.path());
   assert.equal(
     book.getWorksheet("Faturalar").rowCount,
     db
-      .snapshot(2026)
+      .snapshot(2027)
       .invoices.filter((i) => i.month <= 2 && i.status === "active").length + 1,
   );
   assert.deepEqual(
@@ -767,7 +781,7 @@ try {
     await page.getByLabel("Plan versiyonu", { exact: true }).inputValue(),
   );
   const sourceBudgetRow = db
-    .snapshot(2026, currentVersion)
+    .snapshot(2027, currentVersion)
     .rows.find((r) => r.id === 1);
   const budgetDownloadPromise = page.waitForEvent("download");
   await page
@@ -776,7 +790,7 @@ try {
   const budgetDownload = await budgetDownloadPromise;
   assert.equal(
     budgetDownload.suggestedFilename(),
-    "butce-planlama-2026-1-2.xlsx",
+    "butce-planlama-2027-1-2.xlsx",
   );
   const budgetBook = new ExcelJS.Workbook();
   await budgetBook.xlsx.readFile(await budgetDownload.path());
@@ -792,17 +806,21 @@ try {
   );
   assert.equal(
     budgetSheet.getCell("A5").value,
-    Number(
-      BigInt(sourceBudgetRow.months[0].plan) +
-        BigInt(sourceBudgetRow.months[1].plan),
-    ) / 1e6,
+    excelMoney(
+      String(
+        BigInt(sourceBudgetRow.months[0].plan) +
+          BigInt(sourceBudgetRow.months[1].plan),
+      ),
+    ),
   );
   assert.equal(
     budgetSheet.getCell("E5").value,
-    Number(
-      BigInt(sourceBudgetRow.months[0].actual) +
-        BigInt(sourceBudgetRow.months[1].actual),
-    ) / 1e6,
+    excelMoney(
+      String(
+        BigInt(sourceBudgetRow.months[0].actual) +
+          BigInt(sourceBudgetRow.months[1].actual),
+      ),
+    ),
   );
   assert.equal(
     budgetBook.getWorksheet("Gerçekleşen Detayları").rowCount,
@@ -817,18 +835,18 @@ try {
   await expect(
     page
       .locator(".metric")
-      .filter({ has: page.getByText("2026 Bütçe", { exact: true }) }),
+      .filter({ has: page.getByText("2027 Bütçe", { exact: true }) }),
   ).toContainText("2.100.000,00");
   await page.getByRole("button", { name: "Güncelleme", exact: true }).click();
-  await page.getByLabel("2026 Bütçe · TL").fill("5000000");
+  await page.getByLabel("2027 Bütçe · TL").fill("5000000");
   await page.getByRole("button", { name: "Kaydet", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.equal(
-    db.snapshot(2026, editedVersion.id).version.effective_budget_units,
+    db.snapshot(2027, editedVersion.id).version.effective_budget_units,
     "5000000000000",
   );
   assert.equal(
-    db.snapshot(2026).years.find((y) => y.year === 2026).reference_units,
+    db.snapshot(2027).years.find((y) => y.year === 2027).reference_units,
     "2400000000000",
   );
   await openSection("Bütçe Planlama & Takip");
@@ -845,7 +863,7 @@ try {
     .selectOption(String(editedVersion.id));
   await expect(plannedMetric).toContainText("5.000.000,00");
   await openSection("Versiyon & Tasarruf");
-  await page.getByLabel("Yeni bütçe yılı", { exact: true }).fill("2027");
+  await page.getByLabel("Yeni bütçe yılı", { exact: true }).fill("2028");
   await page
     .getByLabel("Yeni yıl bütçesi TL", { exact: true })
     .fill("1200000,123456");
@@ -853,10 +871,10 @@ try {
     .getByRole("button", { name: "Yeni yıl ekle", exact: true })
     .click();
   await expect(page.getByLabel("Bütçe yılı", { exact: true })).toHaveValue(
-    "2027",
+    "2028",
   );
   assert.equal(
-    db.snapshot(2027).years.find((y) => y.year === 2027).reference_units,
+    db.snapshot(2028).years.find((y) => y.year === 2028).reference_units,
     "1200000123456",
   );
   await openSection("Bütçe Planlama & Takip");
@@ -873,13 +891,13 @@ try {
   await expect(plannedMetric).toContainText("1.200.000,12");
   await openSection("Versiyon & Tasarruf");
   await page.getByRole("button", { name: "Güncelleme", exact: true }).click();
-  await page.getByLabel("2027 Bütçe · TL").fill("1300000");
+  await page.getByLabel("2028 Bütçe · TL").fill("1300000");
   await page.getByRole("button", { name: "Kaydet", exact: true }).click();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   await openSection("Bütçe Planlama & Takip");
   await expect(plannedMetric).toContainText("1.300.000,00");
   await screenshot("new-year-budget");
-  await page.getByLabel("Bütçe yılı", { exact: true }).selectOption("2026");
+  await page.getByLabel("Bütçe yılı", { exact: true }).selectOption("2027");
   await openSection("Admin");
   await page.getByLabel("Kullanıcı adı", { exact: true }).fill("ui-viewer");
   await page.getByLabel("İlk parola", { exact: false }).fill(password);

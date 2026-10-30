@@ -15,7 +15,7 @@ function setup() {
     "INSERT INTO users(id,username,password_hash,created_at) VALUES (1,'test','hash','now')",
   );
   s.category({ name: "Eğitim" });
-  s.createYear({ year: 2026, reference: "500000" });
+  s.createYear({ year: 2027, reference: "500000" });
   s.savePlan({
     version_id: 1,
     cells: [{ category_id: 1, month: 1, amount: "500000" }],
@@ -24,7 +24,7 @@ function setup() {
 }
 const payment = (s, amount = "500000") =>
   s.savePayment({
-    year: 2026,
+    year: 2027,
     month: 1,
     category_id: 1,
     description: "Toplu eğitim",
@@ -33,7 +33,7 @@ const payment = (s, amount = "500000") =>
 const invoice = (s, number, amount, month = 1) =>
   s.saveInvoice({
     number,
-    year: 2026,
+    year: 2027,
     month,
     lines: [
       {
@@ -67,7 +67,7 @@ test("500.000 TL ödeme, üç fatura ve kısmi tasarruf: bakiye, kullanılabilir
     match(s, p, [a.id, b.id, a.id]);
     match(s, p, [c.id]); // An additional invoice must preserve earlier matches.
     save(s, p, "100000", "Gerçekleşmeyecek eğitim");
-    let state = s.snapshot(2026),
+    let state = s.snapshot(2027),
       result = state.payments[0];
     assert.equal(state.links.length, 3);
     assert.equal(result.linked_units, units(350000));
@@ -79,22 +79,22 @@ test("500.000 TL ödeme, üç fatura ve kısmi tasarruf: bakiye, kullanılabilir
     assert.equal(state.rows[0].plan, units(500000));
     // Re-matching is idempotent and does not duplicate savings.
     match(s, p, [a.id, b.id, c.id]);
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, units(50000));
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, units(50000));
     const v = s.createVersion({
-      year: 2026,
+      year: 2027,
       name: "V2",
       description: "Yeni plan",
       source_id: 1,
     });
     assert.equal(
-      s.snapshot(2026, v.id).payments[0].saving_units,
+      s.snapshot(2027, v.id).payments[0].saving_units,
       units(100000),
     );
-    assert.equal(s.snapshot(2026).savings.length, 0); // No duplicate manual saving record.
+    assert.equal(s.snapshot(2027).savings.length, 0); // No duplicate manual saving record.
     save(s, p, "150000");
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, "0");
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, "0");
     save(s, p, "0");
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, units(150000));
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, units(150000));
   } finally {
     s.close();
   }
@@ -108,7 +108,7 @@ test("Tasarruf ve tüm fatura eşleştirme yolları aynı ödeme limitini korur"
       b = invoice(s, "0002", "80");
     save(s, p, "30");
     match(s, p, [a.id, b.id]);
-    let state = s.snapshot(2026);
+    let state = s.snapshot(2027);
     assert.equal(state.payments[0].linked_units, units(70));
     assert.equal(state.payments[0].remaining_units, "0");
     assert.equal(state.links.length, 1);
@@ -142,12 +142,12 @@ test("Tasarruf ve tüm fatura eşleştirme yolları aynı ödeme limitini korur"
       ),
     );
     assert.equal(s.revision(), rev);
-    assert.equal(JSON.stringify(s.snapshot(2026).links), before);
+    assert.equal(JSON.stringify(s.snapshot(2027).links), before);
     // Another payment may consume only the unused invoice balance.
     const other = payment(s, "100");
     match(s, other, [a.id]);
     assert.equal(
-      s.snapshot(2026).payments.find((x) => x.id === other.id).linked_units,
+      s.snapshot(2027).payments.find((x) => x.id === other.id).linked_units,
       units(10),
     );
   } finally {
@@ -163,12 +163,12 @@ test("Hatalı çoklu seçim tüm değişiklikleri geri alır, mevcut bağlantıl
       b = invoice(s, "0002", "100000"),
       wrong = invoice(s, "Yanlış ay", "50000", 2);
     match(s, p, [a.id]);
-    const before = JSON.stringify(s.snapshot(2026)),
+    const before = JSON.stringify(s.snapshot(2027)),
       rev = s.revision();
     for (const ids of [[b.id, wrong.id], [a.id, 999999], [], ["x"]])
       assert.throws(() => match(s, p, ids));
     assert.equal(s.revision(), rev);
-    assert.equal(JSON.stringify(s.snapshot(2026)), before);
+    assert.equal(JSON.stringify(s.snapshot(2027)), before);
   } finally {
     s.close();
   }
@@ -183,13 +183,13 @@ test("Fatura iptali ve eşleştirme kaldırma sadece fatura kısmını açar; ö
     match(s, p, [a.id, b.id]);
     save(s, p, "30");
     s.cancelInvoice(a.id);
-    let result = s.snapshot(2026).payments[0];
+    let result = s.snapshot(2027).payments[0];
     assert.equal(result.remaining_units, units(40));
     assert.equal(result.saving_units, units(30));
     s.run("DELETE FROM planned_payment_invoice_links WHERE payment_id=?", p.id);
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, units(70));
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, units(70));
     s.run("UPDATE planned_payments SET status='cancelled' WHERE id=?", p.id);
-    const state = s.snapshot(2026);
+    const state = s.snapshot(2027);
     assert.equal(state.payments[0].remaining_units, "0");
     assert.equal(
       state.payments.filter(
@@ -210,8 +210,8 @@ test("Mikro TL hassasiyetinde kalan ve tasarruf korunur", () => {
       i = invoice(s, "MICRO", "0,000001");
     match(s, p, [i.id]);
     save(s, p, "0,000001");
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, "1");
-    assert.equal(s.snapshot(2026).payments[0].saving_units, "1");
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, "1");
+    assert.equal(s.snapshot(2027).payments[0].saving_units, "1");
   } finally {
     s.close();
   }
@@ -231,18 +231,18 @@ test("Eski veritabanı mevcut kayıtlar korunarak taşınır; tasarruf yeniden a
     );
     legacy.exec(schema);
     legacy.exec(
-      "INSERT INTO budget_years(year,reference_units) VALUES (2026,100000000); INSERT INTO budget_categories(id,name,name_key,sort_order) VALUES (1,'Eğitim','eğitim',0); INSERT INTO planned_payments(id,category_id,year,month,description,amount_units) VALUES (1,1,2026,1,'Eski kayıt',100000000)",
+      "INSERT INTO budget_years(year,reference_units) VALUES (2027,100000000); INSERT INTO budget_categories(id,name,name_key,sort_order) VALUES (1,'Eğitim','eğitim',0); INSERT INTO planned_payments(id,category_id,year,month,description,amount_units) VALUES (1,1,2027,1,'Eski kayıt',100000000)",
     );
     legacy.close();
     let s = new Store(path);
-    assert.equal(s.snapshot(2026).payments[0].saving_units, "0");
+    assert.equal(s.snapshot(2027).payments[0].saving_units, "0");
     s.savePaymentSaving({ amount: "40", note: "Korunan tasarruf" }, 1);
     s.close();
     s = new Store(path);
-    assert.equal(s.snapshot(2026).payments[0].description, "Eski kayıt");
-    assert.equal(s.snapshot(2026).payments[0].saving_units, units(40));
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, units(60));
-    assert.equal(s.snapshot(2026).payments[0].saving_note, "Korunan tasarruf");
+    assert.equal(s.snapshot(2027).payments[0].description, "Eski kayıt");
+    assert.equal(s.snapshot(2027).payments[0].saving_units, units(40));
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, units(60));
+    assert.equal(s.snapshot(2027).payments[0].saving_note, "Korunan tasarruf");
     s.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -346,7 +346,7 @@ test("API çoklu eşleştirme, tasarruf, revizyon kontrolü, audit ve görüntü
       ).status,
       400,
     );
-    assert.equal(s.snapshot(2026).payments[0].remaining_units, units(50000));
+    assert.equal(s.snapshot(2027).payments[0].remaining_units, units(50000));
     const audit = s.get(
       "SELECT * FROM audit_logs WHERE entity='planned_payments' AND entity_id=? ORDER BY id DESC LIMIT 1",
       p.id,
